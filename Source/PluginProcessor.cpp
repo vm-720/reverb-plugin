@@ -8,7 +8,11 @@ SimpleReverbProcessor::SimpleReverbProcessor()
       apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
     sizeParam = apvts.getRawParameterValue ("size");
+    decayParam = apvts.getRawParameterValue ("decay");
     dampingParam = apvts.getRawParameterValue ("damping");
+    lowCutParam = apvts.getRawParameterValue ("lowcut");
+    highCutParam = apvts.getRawParameterValue ("highcut");
+    modParam = apvts.getRawParameterValue ("modulation");
     widthParam = apvts.getRawParameterValue ("width");
     preDelayParam = apvts.getRawParameterValue ("predelay");
     mixParam = apvts.getRawParameterValue ("mix");
@@ -23,15 +27,37 @@ juce::AudioProcessorValueTreeState::ParameterLayout SimpleReverbProcessor::creat
     auto percent = AudioParameterFloatAttributes().withLabel ("%")
                        .withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100.0f)); });
 
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "size", 1 }, "Size",
-                                                       NormalisableRange<float> (0.0f, 1.0f), 0.6f, percent));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "damping", 1 }, "Damping",
-                                                       NormalisableRange<float> (0.0f, 1.0f), 0.4f, percent));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "width", 1 }, "Width",
-                                                       NormalisableRange<float> (0.0f, 1.0f), 1.0f, percent));
+    auto hertz = AudioParameterFloatAttributes().withLabel ("Hz")
+                     .withStringFromValueFunction ([] (float v, int) {
+                         return v >= 1000.0f ? String (v / 1000.0f, 1) + "k" : String (roundToInt (v));
+                     });
+
+    auto seconds = AudioParameterFloatAttributes().withLabel ("s")
+                       .withStringFromValueFunction ([] (float v, int) { return String (v, v < 10.0f ? 2 : 1); });
+
+    auto logRange = [] (float min, float max) {
+        return NormalisableRange<float> (min, max,
+                                         [] (float lo, float hi, float t) { return lo * std::pow (hi / lo, t); },
+                                         [] (float lo, float hi, float v) { return std::log (v / lo) / std::log (hi / lo); });
+    };
+
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "predelay", 1 }, "Pre-Delay",
                                                        NormalisableRange<float> (0.0f, maxPreDelayMs, 0.1f, 0.5f), 20.0f,
                                                        AudioParameterFloatAttributes().withLabel ("ms")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "size", 1 }, "Size",
+                                                       NormalisableRange<float> (0.0f, 1.0f), 0.5f, percent));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "decay", 1 }, "Decay",
+                                                       logRange (0.2f, 20.0f), 2.5f, seconds));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "damping", 1 }, "Damping",
+                                                       NormalisableRange<float> (0.0f, 1.0f), 0.4f, percent));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "modulation", 1 }, "Modulation",
+                                                       NormalisableRange<float> (0.0f, 1.0f), 0.3f, percent));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "lowcut", 1 }, "Low Cut",
+                                                       logRange (20.0f, 1000.0f), 100.0f, hertz));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "highcut", 1 }, "High Cut",
+                                                       logRange (1000.0f, 20000.0f), 12000.0f, hertz));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "width", 1 }, "Width",
+                                                       NormalisableRange<float> (0.0f, 1.0f), 1.0f, percent));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { "mix", 1 }, "Mix",
                                                        NormalisableRange<float> (0.0f, 1.0f), 0.3f, percent));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { "freeze", 1 }, "Freeze", false));
@@ -53,8 +79,7 @@ void SimpleReverbProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     const juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) samplesPerBlock,
                                         (juce::uint32) getTotalNumOutputChannels() };
 
-    reverb.prepare (spec);
-    reverb.reset();
+    engine.prepare (sampleRate);
 
     preDelay.setMaximumDelayInSamples ((int) std::ceil (maxPreDelayMs * 0.001 * sampleRate) + 1);
     preDelay.prepare (spec);
@@ -62,6 +87,8 @@ void SimpleReverbProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
 
     dryWet.prepare (spec);
     dryWet.reset();
+
+    monoScratch.setSize (1, samplesPerBlock);
 
     preDelaySamples.reset (sampleRate, 0.05);
     preDelaySamples.setCurrentAndTargetValue (preDelayParam->load() * 0.001f * (float) sampleRate);
@@ -72,17 +99,20 @@ void SimpleReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     juce::ScopedNoDenormals noDenormals;
 
     const auto numChannels = getTotalNumOutputChannels();
+    const auto numSamples = buffer.getNumSamples();
     for (auto ch = getTotalNumInputChannels(); ch < numChannels; ++ch)
-        buffer.clear (ch, 0, buffer.getNumSamples());
+        buffer.clear (ch, 0, numSamples);
 
-    juce::dsp::Reverb::Parameters params;
-    params.roomSize = sizeParam->load();
+    reverb::Parameters params;
+    params.size = sizeParam->load();
+    params.decaySeconds = decayParam->load();
     params.damping = dampingParam->load();
+    params.lowCutHz = lowCutParam->load();
+    params.highCutHz = highCutParam->load();
+    params.modulation = modParam->load();
     params.width = widthParam->load();
-    params.freezeMode = freezeParam->load() > 0.5f ? 1.0f : 0.0f;
-    params.wetLevel = 1.0f; // dry/wet is handled by the mixer so pre-delay only affects the wet path
-    params.dryLevel = 0.0f;
-    reverb.setParameters (params);
+    params.freeze = freezeParam->load() > 0.5f;
+    engine.setParameters (params);
 
     dryWet.setWetMixProportion (mixParam->load());
 
@@ -90,7 +120,7 @@ void SimpleReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     dryWet.pushDrySamples (block);
 
     preDelaySamples.setTargetValue (preDelayParam->load() * 0.001f * (float) getSampleRate());
-    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    for (int i = 0; i < numSamples; ++i)
     {
         preDelay.setDelay (preDelaySamples.getNextValue());
         for (int ch = 0; ch < numChannels; ++ch)
@@ -101,7 +131,22 @@ void SimpleReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
     }
 
-    reverb.process (juce::dsp::ProcessContextReplacing<float> (block));
+    if (numChannels >= 2)
+    {
+        engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), numSamples);
+    }
+    else
+    {
+        // Mono: run the engine in stereo on a copy and fold the result back down.
+        monoScratch.setSize (1, numSamples, false, false, true);
+        auto* mono = buffer.getWritePointer (0);
+        auto* copy = monoScratch.getWritePointer (0);
+        std::copy (mono, mono + numSamples, copy);
+        engine.process (mono, copy, numSamples);
+        for (int i = 0; i < numSamples; ++i)
+            mono[i] = 0.5f * (mono[i] + copy[i]);
+    }
+
     dryWet.mixWetSamples (block);
 }
 

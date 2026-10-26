@@ -36,6 +36,11 @@ target_sources(SimpleReverb PRIVATE
     Source/PluginEditor.cpp
 )
 
+option(SIMPLEREVERB_TESTS "Build the offline engine test" OFF)
+if(SIMPLEREVERB_TESTS)
+    add_executable(EngineTest Tests/EngineTest.cpp)
+endif()
+
 target_compile_definitions(SimpleReverb PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0

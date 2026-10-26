@@ -2,11 +2,20 @@
 
 #include "PluginProcessor.h"
 
+class KnobLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    KnobLookAndFeel();
+
+    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
+                           float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
+};
+
 class SimpleReverbEditor : public juce::AudioProcessorEditor
 {
 public:
     explicit SimpleReverbEditor (SimpleReverbProcessor&);
-    ~SimpleReverbEditor() override = default;
+    ~SimpleReverbEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -25,7 +34,11 @@ private:
     void setUpKnob (Knob&, const juce::String& paramId, const juce::String& name);
 
     SimpleReverbProcessor& processor;
-    std::array<Knob, 5> knobs;
+    KnobLookAndFeel lookAndFeel;
+
+    // Top row: space and time. Bottom row: tone and output.
+    std::array<Knob, 5> topKnobs;
+    std::array<Knob, 4> bottomKnobs;
     juce::ToggleButton freezeButton { "Freeze" };
     std::unique_ptr<ButtonAttachment> freezeAttachment;
 

@@ -3,6 +3,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include "ReverbEngine.h"
+
 class SimpleReverbProcessor : public juce::AudioProcessor
 {
 public:
@@ -21,7 +23,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 10.0; }
+    double getTailLengthSeconds() const override { return 20.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -39,13 +41,18 @@ public:
 private:
     static constexpr float maxPreDelayMs = 500.0f;
 
-    juce::dsp::Reverb reverb;
+    reverb::Engine engine;
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> preDelay;
     juce::dsp::DryWetMixer<float> dryWet;
     juce::SmoothedValue<float> preDelaySamples;
+    juce::AudioBuffer<float> monoScratch;
 
     std::atomic<float>* sizeParam = nullptr;
+    std::atomic<float>* decayParam = nullptr;
     std::atomic<float>* dampingParam = nullptr;
+    std::atomic<float>* lowCutParam = nullptr;
+    std::atomic<float>* highCutParam = nullptr;
+    std::atomic<float>* modParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
     std::atomic<float>* preDelayParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
