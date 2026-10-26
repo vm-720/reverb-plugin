@@ -2,11 +2,15 @@
 
 A starter algorithmic reverb plugin (VST3 + standalone) built with JUCE and CMake.
 
-Controls: Size, Damping, Width, Pre-Delay (0-500 ms), Mix, Freeze.
+![Simple Reverb](screenshot.png)
 
-The DSP is JUCE's `dsp::Reverb` (a Freeverb-style comb/allpass network) with a smoothed
-pre-delay line on the wet path and an equal-power dry/wet mixer. It's a placeholder engine
-meant to be swapped for something better (FDN, plate, etc.) later.
+Controls: Mix, Width, Size, Decay, Pre-Delay, Density, Mod Rate/Depth, High/Low Cut, Damping,
+Ducking, Freeze, Clear, plus 8 factory presets.
+
+The engine (`Source/ReverbEngine.h`, no JUCE dependency) is a 4-stage Hadamard diffuser feeding an
+8-line Householder feedback delay network with per-line RT60 gains, in-loop damping and slow
+delay modulation. `cmake -B build -DSIMPLEREVERB_TESTS=ON` builds `EngineTest`, which checks
+the measured decay time, stability and freeze.
 
 ## Requirements (Windows)
 

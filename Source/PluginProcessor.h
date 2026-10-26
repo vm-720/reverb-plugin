@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include "Presets.h"
 #include "ReverbEngine.h"
 
 class SimpleReverbProcessor : public juce::AudioProcessor
@@ -25,16 +26,19 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 20.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    int getNumPrograms() override { return (int) getFactoryPresets().size(); }
+    int getCurrentProgram() override { return currentPreset; }
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // Called from the editor; the audio thread clears the tail on its next block.
+    void requestClear() { clearRequested = true; }
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -46,6 +50,10 @@ private:
     juce::dsp::DryWetMixer<float> dryWet;
     juce::SmoothedValue<float> preDelaySamples;
     juce::AudioBuffer<float> monoScratch;
+    std::vector<float> duckGain;
+    float duckEnvelope = 0.0f, duckAttack = 0.0f, duckRelease = 0.0f;
+    std::atomic<bool> clearRequested { false };
+    int currentPreset = 0;
 
     std::atomic<float>* sizeParam = nullptr;
     std::atomic<float>* decayParam = nullptr;
@@ -53,6 +61,9 @@ private:
     std::atomic<float>* lowCutParam = nullptr;
     std::atomic<float>* highCutParam = nullptr;
     std::atomic<float>* modParam = nullptr;
+    std::atomic<float>* modRateParam = nullptr;
+    std::atomic<float>* densityParam = nullptr;
+    std::atomic<float>* duckingParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
     std::atomic<float>* preDelayParam = nullptr;
     std::atomic<float>* mixParam = nullptr;

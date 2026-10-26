@@ -192,6 +192,8 @@ struct Parameters
     float lowCutHz = 100.0f;
     float highCutHz = 12000.0f;
     float modulation = 0.3f;  // 0..1, depth of delay-time wobble
+    float modRateHz = 0.5f;   // average LFO rate; each line runs at a different multiple
+    float density = 0.8f;     // 0..1, how many diffuser stages smear the input (0 = echoey, 1 = smooth)
     float width = 1.0f;       // 0 = mono, 1 = full stereo
     bool freeze = false;
 };
@@ -220,7 +222,7 @@ public:
             fdnBase[(size_t) i] = fdnBaseMs * 0.001f * (float) sampleRate * std::pow (2.0f, r);
             fdnLines[(size_t) i].prepare (maxSamples);
             lfoPhase[(size_t) i] = rng.next();
-            lfoRate[(size_t) i] = 0.12f + 0.9f * rng.next(); // Hz
+            lfoRate[(size_t) i] = 0.6f + 0.8f * rng.next(); // multiple of modRateHz
         }
 
         smoothCoeff = 1.0f - (float) std::exp (-1.0 / (0.08 * sampleRate)); // ~80 ms glide
@@ -267,7 +269,9 @@ public:
         updateFeedbackGains (sizeScaleSmoothed);
 
         const float inputGain = params.freeze ? 0.0f : 1.0f;
-        const float lfoInc = 1.0f / (float) sampleRate;
+        const float lfoInc = params.modRateHz / (float) sampleRate;
+        for (size_t s = 0; s < stageWeight.size(); ++s)
+            stageWeight[s] = std::fmin (std::fmax (params.density * 4.0f - (float) s, 0.0f), 1.0f);
         const float mid = 0.5f, side = 0.5f * params.width;
 
         for (int n = 0; n < numSamples; ++n)
@@ -279,8 +283,15 @@ public:
             for (int i = 0; i < numChannels; ++i)
                 x[(size_t) i] = (i & 1) ? inR : inL;
 
-            for (auto& d : diffusers)
-                d.process (x, sizeScaleSmoothed);
+            // Density fades the diffuser stages in one after another.
+            for (size_t s = 0; s < diffusers.size(); ++s)
+            {
+                const Frame dry = x;
+                diffusers[s].process (x, sizeScaleSmoothed);
+                const float w = stageWeight[s];
+                for (int i = 0; i < numChannels; ++i)
+                    x[(size_t) i] = dry[(size_t) i] + w * (x[(size_t) i] - dry[(size_t) i]);
+            }
 
             // Read the FDN outputs (modulated), damp them and form the stereo output.
             Frame fb;
@@ -356,6 +367,7 @@ private:
     std::array<float, numChannels> feedbackGain {};
     std::array<float, numChannels> lfoPhase {};
     std::array<float, numChannels> lfoRate {};
+    std::array<float, 4> stageWeight { 1.0f, 1.0f, 1.0f, 1.0f };
     Frame dampState {};
 
     std::array<Biquad, 2> lowCut, highCut;
