@@ -6,12 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Pull JUCE straight from GitHub so there's nothing to install by hand.
+# Pinned to the commit behind tag 8.0.4: tags can be moved, commit hashes can't.
+# (GIT_SHALLOW only works with branch/tag names, so it's off here.)
 include(FetchContent)
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 8.0.4
-    GIT_SHALLOW ON
+    GIT_TAG 51d11a2be6d5c97ccf12b4e5e827006e19f0555a # 8.0.4
 )
 FetchContent_MakeAvailable(JUCE)
 

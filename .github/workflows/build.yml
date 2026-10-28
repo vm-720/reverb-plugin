@@ -4,6 +4,10 @@ on:
   push:
   workflow_dispatch:
 
+# The build only needs to read the repo; artifact upload doesn't use this token.
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -16,7 +20,7 @@ jobs:
             name: macos
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
@@ -29,7 +33,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: SimpleReverb-${{ matrix.name }}
           path: |
